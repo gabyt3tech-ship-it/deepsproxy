@@ -10,6 +10,17 @@
 
 import { getDeepSeekHeaders } from './playwright.ts';
 
+// In-memory state to track the last message ID per session to avoid overwriting
+// Use globalThis to ensure it survives module reloads in some test environments
+const sessionStates: Record<string, number | null> = (globalThis as any)._sessionStates || {};
+(globalThis as any)._sessionStates = sessionStates;
+
+export function updateSessionParent(sessionId: string, parentId: number | null) {
+  if (sessionId) {
+    sessionStates[sessionId] = parentId;
+  }
+}
+
 export interface DeepSeekPayload {
   chat_session_id?: string;
   parent_message_id?: number | null;
@@ -21,13 +32,29 @@ export interface DeepSeekPayload {
   preempt: boolean;
 }
 
-export async function createDeepSeekStream(prompt: string, enableThinking: boolean): Promise<{ stream: ReadableStream, headers: Record<string, string>, uiSessionId: string }> {
+export async function createDeepSeekStream(
+  prompt: string, 
+  enableThinking: boolean, 
+  forcedParentId?: number | null
+): Promise<{ stream: ReadableStream, headers: Record<string, string>, uiSessionId: string }> {
   // Obtain fresh headers/PoW from Playwright
-  const { headers, chatSessionId } = await getDeepSeekHeaders();
+  const { headers, chatSessionId, parentMessageId } = await getDeepSeekHeaders();
+
+  // Determine the actual parent ID:
+  // 1. If forcedParentId is provided (even if null), use it.
+  // 2. If tracked parent ID is available for this session, use it.
+  // 3. Fallback to Playwright's state.
+  let actualParentId: number | null = parentMessageId;
+  
+  if (forcedParentId !== undefined) {
+    actualParentId = forcedParentId;
+  } else if (chatSessionId && sessionStates[chatSessionId] !== undefined) {
+    actualParentId = sessionStates[chatSessionId];
+  }
 
   const payload: DeepSeekPayload = {
     chat_session_id: chatSessionId || undefined,
-    parent_message_id: null,
+    parent_message_id: actualParentId,
     model_type: null,
     prompt: prompt,
     ref_file_ids: [],

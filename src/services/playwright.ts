@@ -44,9 +44,11 @@ export async function closePlaywright() {
 /**
  * Ensures the session is valid and extracts headers, PoW, and session ID.
  */
-export async function getDeepSeekHeaders(): Promise<{ headers: Record<string, string>, chatSessionId: string }> {
+export async function getDeepSeekHeaders(): Promise<{ headers: Record<string, string>, chatSessionId: string, parentMessageId: number | null }> {
   if (process.env.TEST_MOCK_PLAYWRIGHT) {
-    return { headers: { authorization: 'Bearer MOCK' }, chatSessionId: 'mock-session' };
+    // Generate a unique session ID if requested for testing isolation
+    const mockSessionId = process.env.TEST_SESSION_ID || 'mock-session';
+    return { headers: { authorization: 'Bearer MOCK' }, chatSessionId: mockSessionId, parentMessageId: null };
   }
 
   if (!activePage) {
@@ -71,6 +73,7 @@ export async function getDeepSeekHeaders(): Promise<{ headers: Record<string, st
       
       const reqHeaders = request.headers();
       let uiSessionId = '';
+      let uiParentMessageId: number | null = null;
 
       const postData = request.postData();
       if (postData) {
@@ -78,6 +81,9 @@ export async function getDeepSeekHeaders(): Promise<{ headers: Record<string, st
           const payload = JSON.parse(postData);
           if (payload.chat_session_id) {
             uiSessionId = payload.chat_session_id;
+          }
+          if (payload.parent_message_id !== undefined) {
+            uiParentMessageId = payload.parent_message_id;
           }
         } catch (e) {
           // ignore parsing error
@@ -100,7 +106,7 @@ export async function getDeepSeekHeaders(): Promise<{ headers: Record<string, st
       // Cleanup route
       await activePage!.unroute('**/api/v0/chat/completion', routeHandler);
 
-      resolve({ headers: extractedHeaders, chatSessionId: uiSessionId });
+      resolve({ headers: extractedHeaders, chatSessionId: uiSessionId, parentMessageId: uiParentMessageId });
     };
 
     activePage!.route('**/api/v0/chat/completion', routeHandler).then(() => {

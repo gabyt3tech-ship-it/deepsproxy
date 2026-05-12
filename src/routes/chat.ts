@@ -11,7 +11,7 @@
 import { Context } from 'hono';
 import { stream as honoStream } from 'hono/streaming';
 import { v4 as uuidv4 } from 'uuid';
-import { createDeepSeekStream } from '../services/deepseek.ts';
+import { createDeepSeekStream, updateSessionParent } from '../services/deepseek.ts';
 import { OpenAIRequest, ChoiceDelta, Message } from '../utils/types.ts';
 import { registry } from '../tools/registry.ts';
 import type { FunctionToolDefinition } from '../tools/types.ts';
@@ -26,7 +26,8 @@ export async function chatCompletions(c: Context) {
     const messages = body.messages || [];
     let systemPrompt = '';
     
-    for (const msg of messages) {
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
       let contentStr = '';
       if (Array.isArray(msg.content)) {
         contentStr = msg.content.map((c: any) => c.text || JSON.stringify(c)).join('\n');
@@ -38,23 +39,25 @@ export async function chatCompletions(c: Context) {
 
       if (msg.role === 'system') {
         systemPrompt += contentStr + '\n\n';
-      } else if (msg.role === 'user') {
-        prompt += `User: ${contentStr}\n\n`;
-      } else if (msg.role === 'assistant') {
-        let assistantContent = contentStr;
-        if ((msg as any).reasoning_content) {
-          assistantContent = `<think>\n${(msg as any).reasoning_content}\n</think>\n${assistantContent}`;
+      } else if (i === messages.length - 1) {
+        if (msg.role === 'user') {
+          prompt += `User: ${contentStr}\n\n`;
+        } else if (msg.role === 'assistant') {
+          let assistantContent = contentStr;
+          if ((msg as any).reasoning_content) {
+            assistantContent = `<think>\n${(msg as any).reasoning_content}\n</think>\n${assistantContent}`;
+          }
+          if (msg.tool_calls && Array.isArray(msg.tool_calls)) {
+             for (const tc of msg.tool_calls) {
+               let args = tc.function?.arguments || '{}';
+               if (typeof args !== 'string') args = JSON.stringify(args);
+               assistantContent += `\n<tool_call>{"name": "${tc.function?.name}", "arguments": ${args}}</tool_call>`;
+             }
+          }
+          prompt += `Assistant: ${assistantContent.trim()}\n\n`;
+        } else if (msg.role === 'tool' || msg.role === 'function') {
+          prompt += `Tool Response (${msg.name || 'tool'}): ${contentStr}\n\n`;
         }
-        if (msg.tool_calls && Array.isArray(msg.tool_calls)) {
-           for (const tc of msg.tool_calls) {
-             let args = tc.function?.arguments || '{}';
-             if (typeof args !== 'string') args = JSON.stringify(args);
-             assistantContent += `\n<tool_call>{"name": "${tc.function?.name}", "arguments": ${args}}</tool_call>`;
-           }
-        }
-        prompt += `Assistant: ${assistantContent.trim()}\n\n`;
-      } else if (msg.role === 'tool' || msg.role === 'function') {
-        prompt += `Tool Response (${msg.name || 'tool'}): ${contentStr}\n\n`;
       }
     }
 
@@ -85,14 +88,18 @@ export async function chatCompletions(c: Context) {
     const finalPrompt = systemPrompt ? `${systemPrompt}\n${prompt}` : prompt;
 
     const isThinkingModel = !body.model.includes('no-thinking');
+    const isNewSession = messages.length <= 1;
 
     // Empty response retry logic
     let stream: ReadableStream;
+    let uiSessionId = '';
     let retries = 3;
     while (retries > 0) {
       try {
-        const result = await createDeepSeekStream(finalPrompt, isThinkingModel);
+        // If it's a new session, force parent_message_id to null
+        const result = await createDeepSeekStream(finalPrompt, isThinkingModel, isNewSession ? null : undefined);
         stream = result.stream;
+        uiSessionId = result.uiSessionId;
         break; // Success
       } catch (err: any) {
         retries--;
@@ -168,6 +175,25 @@ export async function chatCompletions(c: Context) {
 
           try {
             const chunk = JSON.parse(dataStr);
+
+            // Extract message_id for session tracking to avoid overwriting messages
+            let dsMessageId: any = null;
+            if (chunk.response_message_id) {
+              dsMessageId = chunk.response_message_id;
+            } else if (chunk.v && typeof chunk.v === 'object') {
+              if (chunk.v.response && chunk.v.response.message_id) {
+                dsMessageId = chunk.v.response.message_id;
+              } else if (chunk.v.message_id) {
+                dsMessageId = chunk.v.message_id;
+              }
+            } else if (chunk.message_id) {
+              dsMessageId = chunk.message_id;
+            }
+
+            if (dsMessageId) {
+              updateSessionParent(uiSessionId, dsMessageId);
+            }
+
             let vStr = '';
             let foundStr = false;
             let isThinkingChunk = false;

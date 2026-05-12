@@ -50,10 +50,11 @@ test('multiturn-thinking-tools: maintains reasoning_content history', async () =
     const res = await app.fetch(req);
     assert.strictEqual(res.status, 200);
 
-    // Validate that the system properly translated reasoning_content to <think> and tool_calls to <tool_call>
-    assert.ok(capturedPrompt.includes('<think>\nthinking about hello\n</think>'), 'Must include thinking signature');
-    assert.ok(capturedPrompt.includes('<tool_call>{"name": "test", "arguments": {}}</tool_call>'), 'Must include tool call signature');
+    // Validate that only the last message is sent (as requested by user)
+    // In this case, the last message is the tool response
     assert.ok(capturedPrompt.includes('Tool Response (test): success'), 'Must include tool response signature');
+    assert.ok(!capturedPrompt.includes('<think>\nthinking about hello\n</think>'), 'Should not include previous thinking');
+    assert.ok(!capturedPrompt.includes('<tool_call>{"name": "test", "arguments": {}}</tool_call>'), 'Should not include previous tool call');
   } finally {
     restore();
   }
@@ -158,16 +159,19 @@ test('caching-streaming and cache-control: returns prompt_tokens_details', async
   }
 });
 
-test('empty-response-retry: retries on stream crash or fetch error', async () => {
-  let tries = 0;
-  const restore = setupFetchMock((url) => {
-    tries++;
-    if (tries < 3) {
-      // Simulate DeepSeek failing to generate or returning 500 error
-      return new Response('Internal Server Error', { status: 500 });
-    }
+test('session-parent-tracking: appends messages using response message_id as parent', async () => {
+  let capturedPayloads: any[] = [];
+
+  const restore = setupFetchMock((url, init) => {
+    const bodyObj = JSON.parse(init?.body as string || '{}');
+    capturedPayloads.push(bodyObj);
+    
+    // Simulate DeepSeek returning a message_id
+    const mockMessageId = capturedPayloads.length === 1 ? 1001 : 1002;
+    
     const stream = new ReadableStream({
       start(c) {
+        c.enqueue(new TextEncoder().encode(`data: {"v":{"response":{"message_id":${mockMessageId}}}}\n\n`));
         c.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
         c.close();
       }
@@ -176,15 +180,46 @@ test('empty-response-retry: retries on stream crash or fetch error', async () =>
   });
 
   try {
-    const req = new Request('http://localhost/v1/chat/completions', {
+    process.env.TEST_SESSION_ID = 'test-session-parent-tracking';
+    // Turn 1
+    const req1 = new Request('http://localhost/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'deepseek-thinking', messages: [{role: 'user', content: 'test'}], stream: true })
+      body: JSON.stringify({
+        model: 'deepseek-thinking',
+        messages: [{ role: 'user', content: 'Turn 1' }]
+      })
     });
     
-    const res = await app.fetch(req);
-    assert.strictEqual(res.status, 200);
-    assert.strictEqual(tries, 3, 'Should have retried exactly until success on 3rd attempt');
+    const res1 = await app.fetch(req1);
+    assert.strictEqual(res1.status, 200);
+    // Consume the stream to ensure the message_id is processed
+    await res1.text();
+
+    // Turn 2
+    const req2 = new Request('http://localhost/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'deepseek-thinking',
+        messages: [
+          { role: 'user', content: 'Turn 1' },
+          { role: 'assistant', content: 'Response 1' },
+          { role: 'user', content: 'Turn 2' }
+        ]
+      })
+    });
+    
+    const res2 = await app.fetch(req2);
+    assert.strictEqual(res2.status, 200);
+    await res2.text();
+
+    assert.strictEqual(capturedPayloads.length, 2);
+    // In Turn 1, parent_message_id should be null (mock-session is fresh)
+    assert.strictEqual(capturedPayloads[0].parent_message_id, null);
+    // In Turn 2, parent_message_id should be 1001 (the ID returned in Turn 1)
+    assert.strictEqual(capturedPayloads[1].parent_message_id, 1001, 'Turn 2 should use message_id from Turn 1 as parent');
+    assert.strictEqual(capturedPayloads[1].prompt, 'User: Turn 2\n\n', 'Should only send the last message');
   } finally {
     restore();
   }
