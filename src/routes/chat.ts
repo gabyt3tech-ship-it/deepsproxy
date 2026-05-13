@@ -88,7 +88,10 @@ export async function chatCompletions(c: Context) {
     const finalPrompt = systemPrompt ? `${systemPrompt}\n${prompt}` : prompt;
 
     const isThinkingModel = !body.model.includes('no-thinking');
-    const isNewSession = messages.length <= 1;
+    
+    // A session is new if it doesn't have any assistant messages yet.
+    // This handles cases where the first request has [System, User] messages.
+    const isNewSession = !messages.some(m => m.role === 'assistant');
 
     // Empty response retry logic
     let stream: ReadableStream;

@@ -44,7 +44,7 @@ export async function closePlaywright() {
 /**
  * Ensures the session is valid and extracts headers, PoW, and session ID.
  */
-export async function getDeepSeekHeaders(): Promise<{ headers: Record<string, string>, chatSessionId: string, parentMessageId: number | null }> {
+export async function getDeepSeekHeaders(forceNew = false): Promise<{ headers: Record<string, string>, chatSessionId: string, parentMessageId: number | null }> {
   if (process.env.TEST_MOCK_PLAYWRIGHT) {
     // Generate a unique session ID if requested for testing isolation
     const mockSessionId = process.env.TEST_SESSION_ID || 'mock-session';
@@ -55,8 +55,12 @@ export async function getDeepSeekHeaders(): Promise<{ headers: Record<string, st
     throw new Error('Playwright not initialized');
   }
 
-  // Navigate if not on deepseek chat
-  if (!activePage.url().includes('chat.deepseek.com')) {
+  // Navigate to deepseek chat. If forceNew is true or we're not on deepseek, go to home page.
+  const currentUrl = activePage.url();
+  const isOnDeepSeek = currentUrl.includes('chat.deepseek.com');
+  const isOnSpecificChat = isOnDeepSeek && /\/chat\/\d+/.test(currentUrl);
+
+  if (!isOnDeepSeek || forceNew || isOnSpecificChat) {
     await activePage.goto('https://chat.deepseek.com/', { waitUntil: 'domcontentloaded' });
   }
 

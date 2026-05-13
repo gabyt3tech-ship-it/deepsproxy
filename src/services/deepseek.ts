@@ -38,7 +38,8 @@ export async function createDeepSeekStream(
   forcedParentId?: number | null
 ): Promise<{ stream: ReadableStream, headers: Record<string, string>, uiSessionId: string }> {
   // Obtain fresh headers/PoW from Playwright
-  const { headers, chatSessionId, parentMessageId } = await getDeepSeekHeaders();
+  // If forcedParentId is null, it means we are explicitly starting a new session
+  const { headers, chatSessionId, parentMessageId } = await getDeepSeekHeaders(forcedParentId === null);
 
   // Determine the actual parent ID:
   // 1. If forcedParentId is provided (even if null), use it.
