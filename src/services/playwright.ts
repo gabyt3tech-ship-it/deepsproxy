@@ -16,6 +16,8 @@ let context: BrowserContext | null = null;
 export let activePage: Page | null = null;
 let currentHeaders: Record<string, string> = {};
 
+let headerLock: Promise<void> | null = null;
+
 export async function initPlaywright(headless = true) {
   if (process.env.TEST_MOCK_PLAYWRIGHT) return;
   if (context) {
@@ -63,7 +65,6 @@ export async function closePlaywright() {
  */
 export async function getDeepSeekHeaders(forceNew = false): Promise<{ headers: Record<string, string>, chatSessionId: string, parentMessageId: number | null }> {
   if (process.env.TEST_MOCK_PLAYWRIGHT) {
-    // Generate a unique session ID if requested for testing isolation
     const mockSessionId = process.env.TEST_SESSION_ID || 'mock-session';
     return { headers: { authorization: 'Bearer MOCK' }, chatSessionId: mockSessionId, parentMessageId: null };
   }
@@ -72,69 +73,78 @@ export async function getDeepSeekHeaders(forceNew = false): Promise<{ headers: R
     throw new Error('Playwright not initialized');
   }
 
-  // Navigate to deepseek chat. If forceNew is true or we're not on deepseek, go to home page.
-  const currentUrl = activePage.url();
-  const isOnDeepSeek = currentUrl.includes('chat.deepseek.com');
-  const isOnSpecificChat = isOnDeepSeek && /\/chat\/\d+/.test(currentUrl);
-
-  if (!isOnDeepSeek || forceNew || isOnSpecificChat) {
-    await activePage.goto('https://chat.deepseek.com/', { waitUntil: 'domcontentloaded' });
+  // Serialize: only one header extraction at a time
+  while (headerLock) {
+    await headerLock;
   }
+  let unlockHeaders: (() => void) = () => {};
+  headerLock = new Promise(r => { unlockHeaders = r; });
 
-  // Wait for the textarea
-  await activePage.waitForSelector('textarea', { timeout: 30000 }).catch(() => {
-    throw new Error('Timeout waiting for chat input. Are you logged in?');
-  });
+  try {
+    const currentUrl = activePage.url();
+    const isOnDeepSeek = currentUrl.includes('chat.deepseek.com');
+    const isOnSpecificChat = isOnDeepSeek && /\/chat\/\d+/.test(currentUrl);
 
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('Timeout waiting for PoW headers')), 30000);
+    if (!isOnDeepSeek || forceNew || isOnSpecificChat) {
+      await activePage.goto('https://chat.deepseek.com/', { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {
+        debug('Navigation to chat.deepseek.com failed or aborted, continuing with current page state');
+      });
+    }
 
-    const routeHandler = async (route: any, request: any) => {
-      clearTimeout(timeout);
-      
-      const reqHeaders = request.headers();
-      let uiSessionId = '';
-      let uiParentMessageId: number | null = null;
+    const textarea = await activePage.waitForSelector('textarea', { timeout: 30000 }).catch(() => null);
+    if (!textarea) {
+      throw new Error('Timeout waiting for chat input. Are you logged in?');
+    }
 
-      const postData = request.postData();
-      if (postData) {
-        try {
-          const payload = JSON.parse(postData);
-          if (payload.chat_session_id) {
-            uiSessionId = payload.chat_session_id;
+    return await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Timeout waiting for PoW headers')), 30000);
+
+      const routeHandler = async (route: any, request: any) => {
+        clearTimeout(timeout);
+
+        const reqHeaders = request.headers();
+        let uiSessionId = '';
+        let uiParentMessageId: number | null = null;
+
+        const postData = request.postData();
+        if (postData) {
+          try {
+            const payload = JSON.parse(postData);
+            if (payload.chat_session_id) {
+              uiSessionId = payload.chat_session_id;
+            }
+            if (payload.parent_message_id !== undefined) {
+              uiParentMessageId = payload.parent_message_id;
+            }
+          } catch (e) {
+            debug('Ignored post data parse error');
           }
-          if (payload.parent_message_id !== undefined) {
-            uiParentMessageId = payload.parent_message_id;
-          }
-        } catch (e) {
-          debug('Ignored post data parse error');
         }
-      }
 
-      const extractedHeaders = {
-        'x-ds-pow-response': reqHeaders['x-ds-pow-response'] || '',
-        'x-hif-dliq': reqHeaders['x-hif-dliq'] || '',
-        'x-hif-leim': reqHeaders['x-hif-leim'] || '',
-        'authorization': reqHeaders['authorization'] || '',
-        'cookie': reqHeaders['cookie'] || ''
+        const extractedHeaders = {
+          'x-ds-pow-response': reqHeaders['x-ds-pow-response'] || '',
+          'x-hif-dliq': reqHeaders['x-hif-dliq'] || '',
+          'x-hif-leim': reqHeaders['x-hif-leim'] || '',
+          'authorization': reqHeaders['authorization'] || '',
+          'cookie': reqHeaders['cookie'] || ''
+        };
+
+        currentHeaders = extractedHeaders;
+
+        await route.abort('aborted');
+        await activePage!.unroute('**/api/v0/chat/completion', routeHandler);
+
+        resolve({ headers: extractedHeaders, chatSessionId: uiSessionId, parentMessageId: uiParentMessageId });
       };
 
-      currentHeaders = extractedHeaders;
-
-      // Abort to prevent polluting chat history
-      await route.abort('aborted');
-      
-      // Cleanup route
-      await activePage!.unroute('**/api/v0/chat/completion', routeHandler);
-
-      resolve({ headers: extractedHeaders, chatSessionId: uiSessionId, parentMessageId: uiParentMessageId });
-    };
-
-    activePage!.route('**/api/v0/chat/completion', routeHandler).then(() => {
-      // Trigger PoW generation by typing and hitting enter
-      activePage!.fill('textarea', 'a').then(() => {
-        activePage!.keyboard.press('Enter');
+      activePage!.route('**/api/v0/chat/completion', routeHandler).then(() => {
+        activePage!.fill('textarea', 'a').then(() => {
+          activePage!.keyboard.press('Enter');
+        });
       });
     });
-  });
+  } finally {
+    headerLock = null;
+    unlockHeaders();
+  }
 }
