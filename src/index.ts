@@ -45,21 +45,39 @@ app.get('/v1/models', (c) => {
     object: 'list',
     data: [
       {
-        id: 'deepseek-thinking',
+        id: 'deepseek-flash',
         object: 'model',
         created: Math.floor(Date.now() / 1000),
         owned_by: 'deepseek',
         permission: [],
-        root: 'deepseek-thinking',
+        root: 'deepseek-flash',
         parent: null,
       },
       {
-        id: 'deepseek-no-thinking',
+        id: 'deepseek-flash-thinking',
         object: 'model',
         created: Math.floor(Date.now() / 1000),
         owned_by: 'deepseek',
         permission: [],
-        root: 'deepseek-no-thinking',
+        root: 'deepseek-flash-thinking',
+        parent: null,
+      },
+      {
+        id: 'deepseek-pro',
+        object: 'model',
+        created: Math.floor(Date.now() / 1000),
+        owned_by: 'deepseek',
+        permission: [],
+        root: 'deepseek-pro',
+        parent: null,
+      },
+      {
+        id: 'deepseek-pro-thinking',
+        object: 'model',
+        created: Math.floor(Date.now() / 1000),
+        owned_by: 'deepseek',
+        permission: [],
+        root: 'deepseek-pro-thinking',
         parent: null,
       }
     ]

@@ -88,8 +88,9 @@ export async function chatCompletions(c: Context) {
 
     const finalPrompt = systemPrompt ? `${systemPrompt}\n${prompt}` : prompt;
 
-    const isThinkingModel = !body.model.includes('no-thinking');
-    
+    const isThinkingModel = body.model.includes('thinking');
+    const isProModel = body.model.includes('pro');
+
     // A session is new if it doesn't have any assistant messages yet.
     // This handles cases where the first request has [System, User] messages.
     const isNewSession = !messages.some(m => m.role === 'assistant');
@@ -101,7 +102,7 @@ export async function chatCompletions(c: Context) {
     while (retries > 0) {
       try {
         // If it's a new session, force parent_message_id to null
-        const result = await createDeepSeekStream(finalPrompt, isThinkingModel, isNewSession ? null : undefined);
+        const result = await createDeepSeekStream(finalPrompt, isThinkingModel, isProModel, isNewSession ? null : undefined);
         stream = result.stream;
         uiSessionId = result.uiSessionId;
         break; // Success
@@ -147,6 +148,7 @@ export async function chatCompletions(c: Context) {
       let thinkingFragments: Record<string, boolean> = {};
       let currentFragIndex = 0;
       let currentAppendPath = '';
+      let currentFragmentType = '';
       
       let reasoningBuffer = '';
       let contentEmitBuffer = '';
@@ -179,8 +181,6 @@ export async function chatCompletions(c: Context) {
 
           try {
             const chunk = JSON.parse(dataStr);
-
-            // Extract message_id for session tracking to avoid overwriting messages
             let dsMessageId: any = null;
             if (chunk.response_message_id) {
               dsMessageId = chunk.response_message_id;
@@ -221,6 +221,7 @@ export async function chatCompletions(c: Context) {
                   vStr = frag.content;
                   foundStr = true;
                   currentAppendPath = frag.type === 'THINK' ? 'response/thinking_content' : 'response/content';
+                  currentFragmentType = frag.type || '';
                 }
               } else if (Array.isArray(chunk.v) && chunk.v.length > 0) {
                 const firstObj = chunk.v[0];
@@ -228,12 +229,23 @@ export async function chatCompletions(c: Context) {
                   vStr = firstObj.content;
                   foundStr = true;
                   currentAppendPath = firstObj.type === 'THINK' ? 'response/thinking_content' : 'response/content';
+                  currentFragmentType = firstObj.type || '';
                 }
               }
             }
 
-            // Determine if it's thinking based on the current path
-            if (currentAppendPath.includes('thinking_content') || currentAppendPath.includes('THINK')) {
+            // Detect fragment type changes - for v2.0.0, track which fragment is active
+            if (chunk.p === 'response/fragments' && Array.isArray(chunk.v)) {
+              const lastFrag = chunk.v[chunk.v.length - 1];
+              if (lastFrag && lastFrag.type) {
+                currentFragmentType = lastFrag.type;
+              }
+            }
+
+            // Determine if it's thinking based on the current path OR fragment type (for v2.0.0)
+            if (currentAppendPath.includes('thinking_content') ||
+                currentAppendPath.includes('THINK') ||
+                (currentAppendPath.includes('fragments/-1/content') && currentFragmentType === 'THINK')) {
               isThinkingChunk = true;
             }
 
@@ -241,7 +253,7 @@ export async function chatCompletions(c: Context) {
               if (vStr === 'FINISHED') continue;
 
               const delta: ChoiceDelta = {};
-              
+
               // Map chunk to either reasoning_content or content
               if (isThinkingChunk) {
                 inThinkingState = true;
@@ -257,6 +269,7 @@ export async function chatCompletions(c: Context) {
                 });
               } else {
                 inThinkingState = false;
+
                 contentEmitBuffer += vStr;
 
                 while (contentEmitBuffer.length > 0) {
@@ -305,12 +318,30 @@ export async function chatCompletions(c: Context) {
                     const endIdx = contentEmitBuffer.indexOf(TOOL_END);
                     if (endIdx !== -1) {
                       let toolJsonStr = contentEmitBuffer.substring(0, endIdx).trim();
+                      
                       try {
                         const toolCallObj = robustParseJSON(toolJsonStr);
+                        
                         if (!toolCallObj) throw new Error('Empty tool call');
-                        
+
+                        // Extract name from XML attribute first, then fall back to JSON
+                        const nameMatch = toolJsonStr.match(/<tool_call\s+name="([^"]+)"/);
+                        let toolName = nameMatch ? nameMatch[1] : toolCallObj.name || '';
+
+                        // Extract arguments - handle different formats
+                        let toolArgs: Record<string, unknown> = {};
+                        if (toolCallObj.arguments && typeof toolCallObj.arguments === 'object') {
+                          toolArgs = toolCallObj.arguments;
+                        } else {
+                          // Arguments are the whole object (except name if in JSON)
+                          const keys = Object.keys(toolCallObj).filter(k => k !== 'name');
+                          for (const k of keys) {
+                            toolArgs[k] = toolCallObj[k];
+                          }
+                        }
+
                         const toolId = 'call_' + uuidv4();
-                        
+
                         await writeEvent({
                           id: completionId,
                           object: 'chat.completion.chunk',
@@ -322,10 +353,8 @@ export async function chatCompletions(c: Context) {
                               id: toolId,
                               type: 'function',
                               function: {
-                                name: toolCallObj.name || '',
-                                arguments: typeof toolCallObj.arguments === 'object'
-                                  ? JSON.stringify(toolCallObj.arguments)
-                                  : String(toolCallObj.arguments || '')
+                                name: toolName,
+                                arguments: JSON.stringify(toolArgs)
                               }
                             }]
                           })]
@@ -333,6 +362,7 @@ export async function chatCompletions(c: Context) {
                         emittedToolCallCount++;
                       } catch (e) {
                         // Failed to parse tool call JSON, emit as regular text
+                        
                         if (emittedToolCallCount === 0) {
                           await writeEvent({
                             id: completionId,

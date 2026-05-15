@@ -158,14 +158,26 @@ GET /v1/models
   "object": "list",
   "data": [
     {
-      "id": "deepseek-thinking",
+      "id": "deepseek-flash",
       "object": "model",
       "created": 1715616000,
       "owned_by": "deepseek"
     },
     {
-      "id": "deepseek-no-thinking",
-      "object": "model", 
+      "id": "deepseek-flash-thinking",
+      "object": "model",
+      "created": 1715616000,
+      "owned_by": "deepseek"
+    },
+    {
+      "id": "deepseek-pro",
+      "object": "model",
+      "created": 1715616000,
+      "owned_by": "deepseek"
+    },
+    {
+      "id": "deepseek-pro-thinking",
+      "object": "model",
       "created": 1715616000,
       "owned_by": "deepseek"
     }
@@ -185,7 +197,7 @@ Content-Type: application/json
 **Request Body**:
 ```json
 {
-  "model": "deepseek-thinking",
+  "model": "deepseek-flash-thinking",
   "messages": [
     { "role": "user", "content": "Qual é a previsão do tempo?" }
   ],
@@ -216,7 +228,7 @@ Content-Type: application/json
   "id": "chatcmpl-xxx",
   "object": "chat.completion",
   "created": 1715616000,
-  "model": "deepseek-thinking",
+  "model": "deepseek-flash-thinking",
   "choices": [
     {
       "index": 0,
@@ -246,7 +258,7 @@ Content-Type: application/json
 curl http://localhost:3000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "deepseek-thinking",
+    "model": "deepseek-flash-thinking",
     "messages": [{"role": "user", "content": "Olá!"}]
   }'
 ```
@@ -262,7 +274,7 @@ const openai = new OpenAI({
 });
 
 const completion = await openai.chat.completions.create({
-  model: 'deepseek-thinking',
+  model: 'deepseek-flash-thinking',
   messages: [{ role: 'user', content: 'Explique TypeScript' }]
 });
 
@@ -280,7 +292,7 @@ client = OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="deepseek-thinking",
+    model="deepseek-flash-thinking",
     messages=[{"role": "user", "content": "Hello!"}]
 )
 

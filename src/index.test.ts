@@ -13,7 +13,7 @@ test('Health check endpoint returns status ok', async () => {
   assert.deepStrictEqual(body, { status: 'ok' });
 });
 
-test('Models endpoint returns deepseek-thinking and deepseek-no-thinking', async () => {
+test('Models endpoint returns deepseek models', async () => {
   const req = new Request('http://localhost/v1/models');
   const res = await app.fetch(req);
   
@@ -22,11 +22,13 @@ test('Models endpoint returns deepseek-thinking and deepseek-no-thinking', async
   const body = await res.json();
   assert.strictEqual(body.object, 'list');
   assert.ok(Array.isArray(body.data));
-  assert.ok(body.data.some((m: any) => m.id === 'deepseek-thinking'));
-  assert.ok(body.data.some((m: any) => m.id === 'deepseek-no-thinking'));
+  assert.ok(body.data.some((m: any) => m.id === 'deepseek-flash'));
+  assert.ok(body.data.some((m: any) => m.id === 'deepseek-flash-thinking'));
+  assert.ok(body.data.some((m: any) => m.id === 'deepseek-pro'));
+  assert.ok(body.data.some((m: any) => m.id === 'deepseek-pro-thinking'));
 });
 
-test('Chat Completions endpoint with deepseek-thinking (thinking enabled)', async () => {
+test('Chat Completions endpoint with deepseek-flash (no thinking)', async () => {
   // Initialize playwright for this test
   // NOTE: Headless mode can sometimes fail Cloudflare checks. We use headless=false for the test
   // to ensure it matches the logged-in browser state if needed, or you can switch it to true.
@@ -34,7 +36,7 @@ test('Chat Completions endpoint with deepseek-thinking (thinking enabled)', asyn
 
   try {
     const payload = {
-      model: 'deepseek-thinking',
+      model: 'deepseek-flash',
       messages: [{ role: 'user', content: 'What is 99 * 182? Please think step by step.' }],
       stream: true
     };

@@ -33,8 +33,9 @@ export interface DeepSeekPayload {
 }
 
 export async function createDeepSeekStream(
-  prompt: string, 
-  enableThinking: boolean, 
+  prompt: string,
+  enableThinking: boolean,
+  isProModel: boolean = false,
   forcedParentId?: number | null
 ): Promise<{ stream: ReadableStream, headers: Record<string, string>, uiSessionId: string }> {
   // Obtain fresh headers/PoW from Playwright
@@ -56,7 +57,7 @@ export async function createDeepSeekStream(
   const payload: DeepSeekPayload = {
     chat_session_id: chatSessionId || undefined,
     parent_message_id: actualParentId,
-    model_type: null,
+    model_type: isProModel ? 'expert' : null,
     prompt: prompt,
     ref_file_ids: [],
     thinking_enabled: enableThinking,
@@ -75,10 +76,10 @@ export async function createDeepSeekStream(
       'x-ds-pow-response': headers['x-ds-pow-response'],
       'x-hif-dliq': headers['x-hif-dliq'],
       'x-hif-leim': headers['x-hif-leim'],
-      'x-app-version': '20240126.1',
+      'x-app-version': '2.0.0',
       'x-client-locale': 'pt_BR',
       'x-client-platform': 'web',
-      'x-client-version': '1.0.0'
+      'x-client-version': '2.0.0'
     },
     body: JSON.stringify(payload)
   });
