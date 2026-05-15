@@ -302,35 +302,73 @@ export async function chatCompletions(c: Context) {
 
       const toolNames = formattedTools.map((t: any) => `"${t.name}"`).join(', ');
 
-      systemPrompt += `\n\n## Tools
+      const isThinking = body.model.includes('thinking');
 
-You have access to these tools. When a task requires using a tool, call it using the format below. If the task is simple (answer a question, give an explanation), respond directly.
+      systemPrompt += `\n\n## Tool Calling Protocol
 
-### Tool Definitions
+You have access to tools that let you interact with the user's system. Your job is to decide WHEN to use them.
+
+### Available Tools
 
 \`\`\`json
 ${toolsJson}
 \`\`\`
 
-### How to call a tool
+### How to Call a Tool
 
-Output EXACTLY this format (no extra text, no markdown code blocks):
+To invoke a tool, output a single line with NO surrounding text, NO markdown fences, NO newlines before or after:
 
-<tool_call>{"name": "tool_name", "arguments": {"param_name": "value"}}</tool_call>
+<tool_call>{"name": "tool_name", "arguments": {"param": "value"}}</tool_call>
 
-### When to call
+Example of a valid tool call:
+<tool_call>{"name": "Bash", "arguments": {"command": "ls -la"}}</tool_call>
 
-- Information gathering, file operations, analysis, code changes → call the right tool
-- Simple Q&A, explanations → respond directly
-- Multiple tools needed → call them one after another
-- If unsure, prefer using a tool
+To call multiple tools sequentially, output them one after another:
+<tool_call>{"name": "Glob", "arguments": {"pattern": "**/*.ts"}}</tool_call>
+<tool_call>{"name": "Grep", "arguments": {"pattern": "TODO", "include": "*.ts"}}</tool_call>
 
-### Rules
+### Decision Rules (FOLLOW THESE STRICTLY)
 
-1. Valid JSON with "name" and "arguments" only
-2. Arguments must match the tool's parameter schema
-3. After calling a tool, wait for the result
-4. NEVER wrap tool calls in markdown code blocks or add text around them\n\n`;
+**You MUST call a tool when:**
+- The user asks you to read, write, edit, or analyze files
+- The user asks you to execute commands or run code
+- The user asks you to search the codebase
+- The user asks you to plan, explore, or design architecture
+- The user asks for information that requires looking at their project
+- ANY task that involves interacting with the user's files, system, or code
+
+**You should respond directly ONLY when:**
+- The user asks a general knowledge question
+- The user asks for an explanation or opinion
+- The user is having a casual conversation
+- The user explicitly says "just answer" or "no tools needed"
+
+**For planning and complex tasks:**
+- When the user asks for a plan, use the ${toolNames.includes('AgentTool') ? 'AgentTool with subagentType "Plan"' : 'appropriate tool'} to investigate first
+- Do NOT write plans from general knowledge alone — explore the project first
+- Always prefer delegating to the right tool rather than guessing
+
+### CRITICAL RULES
+
+1. NEVER wrap <tool_call> in \`\`\` code fences or backticks
+2. NEVER add explanatory text before or after a <tool_call>
+3. Each <tool_call> must be self-contained valid JSON
+4. After calling a tool, STOP generating — wait for the result
+5. If a tool returns an error, try a different approach or tell the user
+6. You can chain multiple tool calls when they are independent\n\n`;
+
+      if (isThinking) {
+        systemPrompt += `### Instructions for Reasoning Models
+
+You have a reasoning/thinking phase before responding. Use your reasoning to PLAN which tools to call, then output the tool call. Do NOT embed your plan in the final response — output only the <tool_call> tag.
+
+Correct reasoning flow:
+1. Understand the request
+2. Think: "This requires reading files, I should use the Read tool"
+3. Output: <tool_call>{"name": "Read", ...}>
+
+DO NOT output your reasoning as part of the response. The response must be ONLY the tool call or the direct answer.\n\n`;
+      }
 
       const toolChoice = body.tool_choice;
       if (toolChoice && typeof toolChoice === 'object' && 'function' in toolChoice) {
