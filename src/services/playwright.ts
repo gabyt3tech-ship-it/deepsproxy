@@ -10,6 +10,7 @@
 
 import { chromium, BrowserContext, Page } from 'playwright';
 import path from 'path';
+import { debug, debugError } from '../utils/debug.ts';
 
 let context: BrowserContext | null = null;
 export let activePage: Page | null = null;
@@ -18,8 +19,10 @@ let currentHeaders: Record<string, string> = {};
 export async function initPlaywright(headless = true) {
   if (process.env.TEST_MOCK_PLAYWRIGHT) return;
   if (context) {
+    debug('Playwright already initialized, skipping');
     return;
   }
+  debug('Initializing Playwright...');
 
   const profilePath = path.resolve('deepseek_profile');
 
@@ -48,6 +51,7 @@ export async function initPlaywright(headless = true) {
 export async function closePlaywright() {
   if (process.env.TEST_MOCK_PLAYWRIGHT) return;
   if (context) {
+    debug('Closing Playwright context');
     await context.close();
     context = null;
     activePage = null;
@@ -103,7 +107,7 @@ export async function getDeepSeekHeaders(forceNew = false): Promise<{ headers: R
             uiParentMessageId = payload.parent_message_id;
           }
         } catch (e) {
-          // ignore parsing error
+          debug('Ignored post data parse error');
         }
       }
 

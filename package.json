@@ -5,9 +5,11 @@
   "main": "index.js",
   "scripts": {
     "start": "npx tsx src/index.ts",
+    "dev": "npx tsx watch src/index.ts",
     "login": "npx tsx src/login.ts",
     "test": "tsx --test src/**/*.test.ts",
-    "build": "tsc"
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [],
   "author": "Pedro Farias",

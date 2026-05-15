@@ -10,6 +10,7 @@ import type { ParsedToolCall, ToolCallResult, ToolContext } from './types.ts';
 import { SchemaValidationError } from './schema.ts';
 import { registry } from './registry.ts';
 import { robustParseJSON } from '../utils/json.ts';
+import { debug } from '../utils/debug.ts';
 
 export interface ExecutionLoopConfig {
   maxTurns?: number;
@@ -166,14 +167,14 @@ export async function runExecutionLoop(
   config: ExecutionLoopConfig = {}
 ): Promise<string> {
   const maxTurns = config.maxTurns ?? 10;
-  const debug = config.debug ?? false;
+  const debugMode = config.debug ?? false;
 
   const tools = registry.listNames().length > 0
     ? registry.toOpenAITools()
     : undefined;
 
   for (let turn = 0; turn < maxTurns; turn++) {
-    if (debug) {
+    if (debugMode) {
       console.log(`[executor] Turn ${turn + 1}/${maxTurns}, messages: ${messages.length}`);
     }
 
@@ -194,10 +195,10 @@ export async function runExecutionLoop(
       ? parsedFromContent.textContent
       : response.content;
 
+    debug('LLM response - content length:', effectiveContent?.length, 'tool calls:', effectiveToolCalls.length);
+
     if (effectiveToolCalls.length === 0) {
-      if (debug) {
-        console.log('[executor] No tool calls, loop complete');
-      }
+      debug('No tool calls, returning content');
       return effectiveContent || '';
     }
 
@@ -207,7 +208,7 @@ export async function runExecutionLoop(
       model,
     };
 
-    if (debug) {
+    if (debugMode) {
       console.log(
         `[executor] Executing ${effectiveToolCalls.length} tool calls:`,
         effectiveToolCalls.map((tc) => tc.name)
@@ -222,7 +223,7 @@ export async function runExecutionLoop(
       messages.push(buildToolMessage(result));
     }
 
-    if (debug) {
+    if (debugMode) {
       console.log(
         `[executor] Tool results:`,
         toolResults.map((r) => ({ name: r.name, isError: r.isError }))

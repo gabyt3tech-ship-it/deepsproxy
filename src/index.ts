@@ -13,9 +13,11 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { chatCompletions } from './routes/chat.ts';
 import * as dotenv from 'dotenv';
-import { initPlaywright } from './services/playwright.ts';
+import { initPlaywright, activePage } from './services/playwright.ts';
+import { debug, debugError } from './utils/debug.ts';
 
 dotenv.config();
+debug('Environment loaded');
 
 export const app = new Hono();
 
@@ -28,14 +30,24 @@ app.use('*', async (c, next) => {
     const xApiKey = c.req.header('X-API-Key');
     const providedKey = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : xApiKey;
     if (!providedKey || providedKey !== apiKey) {
+      debug('Unauthorized request to', c.req.path);
       return c.json({ error: 'Unauthorized' }, 401);
     }
   }
+  debug('Request:', c.req.method, c.req.path);
   await next();
 });
 
-// Basic health check
-app.get('/health', (c) => c.json({ status: 'ok' }));
+// Health check with service status
+app.get('/health', (c) => {
+  return c.json({
+    status: 'ok',
+    services: {
+      playwright: activePage !== null ? 'connected' : 'disconnected',
+    },
+    uptime: process.uptime(),
+  });
+});
 
 // OpenAI compatible routes
 app.post('/v1/chat/completions', chatCompletions);
@@ -89,8 +101,9 @@ import { fileURLToPath } from 'url';
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   initPlaywright().then(() => {
-    console.log('Playwright initialized.');
+    debug('Playwright initialized.');
     const port = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+    debug(`Server is running on port ${port}`);
     console.log(`Server is running on port ${port}`);
 
     serve({
@@ -98,6 +111,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       port
     });
   }).catch((err: any) => {
+    debugError('Failed to initialize playwright:', err);
     console.error('Failed to initialize playwright:', err);
     process.exit(1);
   });

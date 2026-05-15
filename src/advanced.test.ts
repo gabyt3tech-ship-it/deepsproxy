@@ -50,11 +50,11 @@ test('multiturn-thinking-tools: maintains reasoning_content history', async () =
     const res = await app.fetch(req);
     assert.strictEqual(res.status, 200);
 
-    // Validate that only the last message is sent (as requested by user)
-    // In this case, the last message is the tool response
-    assert.ok(capturedPrompt.includes('Tool Response (test): success'), 'Must include tool response signature');
-    assert.ok(!capturedPrompt.includes('<think>\nthinking about hello\n</think>'), 'Should not include previous thinking');
-    assert.ok(!capturedPrompt.includes('<tool_call>{"name": "test", "arguments": {}}</tool_call>'), 'Should not include previous tool call');
+    // All messages are now included for full context
+    assert.ok(capturedPrompt.includes('User: hello'), 'Must include the user message');
+    assert.ok(capturedPrompt.includes('doing something'), 'Must include assistant content');
+    assert.ok(capturedPrompt.includes('Tool Response (test): success'), 'Must include tool response');
+    assert.ok(capturedPrompt.includes('<tool_call>'), 'Must include previous tool call for context');
   } finally {
     restore();
   }
@@ -219,7 +219,9 @@ test('session-parent-tracking: appends messages using response message_id as par
     assert.strictEqual(capturedPayloads[0].parent_message_id, null);
     // In Turn 2, parent_message_id should be 1001 (the ID returned in Turn 1)
     assert.strictEqual(capturedPayloads[1].parent_message_id, 1001, 'Turn 2 should use message_id from Turn 1 as parent');
-    assert.strictEqual(capturedPayloads[1].prompt, 'User: Turn 2\n\n', 'Should only send the last message');
+    assert.ok(capturedPayloads[1].prompt.includes('User: Turn 2'), 'Should include the latest user message');
+    assert.ok(capturedPayloads[1].prompt.includes('Assistant: Response 1'), 'Should include assistant response for context');
+    assert.ok(capturedPayloads[1].prompt.includes('User: Turn 1'), 'Should include first user message for context');
   } finally {
     restore();
   }

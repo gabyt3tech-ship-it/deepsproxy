@@ -9,6 +9,7 @@
  */
 
 import { getDeepSeekHeaders } from './playwright.ts';
+import { debug, debugError } from '../utils/debug.ts';
 
 // In-memory state to track the last message ID per session to avoid overwriting
 // Use globalThis to ensure it survives module reloads in some test environments
@@ -17,6 +18,7 @@ const sessionStates: Record<string, number | null> = (globalThis as any)._sessio
 
 export function updateSessionParent(sessionId: string, parentId: number | null) {
   if (sessionId) {
+    debug(`updateSessionParent: session=${sessionId}, parentId=${parentId}`);
     sessionStates[sessionId] = parentId;
   }
 }
@@ -65,29 +67,44 @@ export async function createDeepSeekStream(
     preempt: false
   };
 
-  const response = await fetch('https://chat.deepseek.com/api/v0/chat/completion', {
-    method: 'POST',
-    headers: {
-      'accept': '*/*',
-      'accept-language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-      'authorization': headers['authorization'],
-      'content-type': 'application/json',
-      'origin': 'https://chat.deepseek.com',
-      'x-ds-pow-response': headers['x-ds-pow-response'],
-      'x-hif-dliq': headers['x-hif-dliq'],
-      'x-hif-leim': headers['x-hif-leim'],
-      'x-app-version': '2.0.0',
-      'x-client-locale': 'pt_BR',
-      'x-client-platform': 'web',
-      'x-client-version': '2.0.0'
-    },
-    body: JSON.stringify(payload)
-  });
+  debug('Creating DeepSeek stream:', { model_type: payload.model_type, thinking_enabled: payload.thinking_enabled, sessionId: payload.chat_session_id });
 
-  if (!response.ok || !response.body) {
-    const errText = await response.text().catch(() => '');
-    throw new Error(`Failed to fetch from DeepSeek: ${response.status} ${response.statusText} - ${errText}`);
+  const DEEPSEEK_API = 'https://chat.deepseek.com/api/v0/chat/completion';
+  const FETCH_TIMEOUT = 60_000;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(new DOMException('DeepSeek request timed out', 'TimeoutError')), FETCH_TIMEOUT);
+
+  try {
+    const response = await fetch(DEEPSEEK_API, {
+      signal: controller.signal,
+      method: 'POST',
+      headers: {
+        'accept': '*/*',
+        'accept-language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+        'authorization': headers['authorization'],
+        'content-type': 'application/json',
+        'origin': 'https://chat.deepseek.com',
+        'x-ds-pow-response': headers['x-ds-pow-response'],
+        'x-hif-dliq': headers['x-hif-dliq'],
+        'x-hif-leim': headers['x-hif-leim'],
+        'x-app-version': '2.0.0',
+        'x-client-locale': 'pt_BR',
+        'x-client-platform': 'web',
+        'x-client-version': '2.0.0'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok || !response.body) {
+      const errText = await response.text().catch(() => '');
+      debugError('DeepSeek API error:', response.status, response.statusText, errText);
+      throw new Error(`DeepSeek API: ${response.status} ${response.statusText} - ${errText}`);
+    }
+
+    debug('DeepSeek stream created successfully, session:', chatSessionId);
+    return { stream: response.body, headers, uiSessionId: chatSessionId };
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  return { stream: response.body, headers, uiSessionId: chatSessionId };
 }

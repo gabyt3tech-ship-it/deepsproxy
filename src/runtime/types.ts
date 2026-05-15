@@ -48,6 +48,8 @@ export interface AgentState {
 
   /** Final text content returned by the agent */
   finalContent: string | null;
+  /** Final reasoning/thinking content returned by the agent */
+  finalReasoning: string | null;
   /** Finish reason: 'stop' | 'tool_calls' | 'error' | null */
   finishReason: string | null;
 
@@ -126,6 +128,7 @@ export type AgentEventListener = (event: AgentEvent) => void;
 
 export interface LLMResponse {
   content: string | null;
+  reasoning?: string | null;
   toolCalls: ParsedToolCall[];
   finishReason: string;
   usage?: Partial<AgentUsage>;

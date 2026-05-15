@@ -10,7 +10,9 @@ test('Health check endpoint returns status ok', async () => {
   assert.strictEqual(res.status, 200);
   
   const body = await res.json();
-  assert.deepStrictEqual(body, { status: 'ok' });
+  assert.strictEqual(body.status, 'ok');
+  assert.ok(body.uptime);
+  assert.ok(body.services?.playwright);
 });
 
 test('Models endpoint returns deepseek models', async () => {
