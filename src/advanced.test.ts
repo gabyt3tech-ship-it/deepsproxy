@@ -38,7 +38,7 @@ test('multiturn-thinking-tools: maintains reasoning_content history', async () =
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'deepseek-flash-thinking',
+        model: 'deepseek-v4-flash-thinking',
         messages: [
           { role: 'user', content: 'hello' },
           { role: 'assistant', content: 'doing something', reasoning_content: 'thinking about hello', tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'test', arguments: '{}' } }] },
@@ -79,7 +79,7 @@ test('streaming-whitespace: preserves exact whitespace', async () => {
     const req = new Request('http://localhost/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'deepseek-flash-thinking', messages: [{role: 'user', content: 'test'}], stream: true })
+      body: JSON.stringify({ model: 'deepseek-v4-flash-thinking', messages: [{role: 'user', content: 'test'}], stream: true })
     });
     
     const res = await app.fetch(req);
@@ -127,7 +127,7 @@ test('caching-streaming and cache-control: returns prompt_tokens_details', async
     const req = new Request('http://localhost/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'deepseek-flash-thinking', messages: [{role: 'user', content: 'test'}], stream: true })
+      body: JSON.stringify({ model: 'deepseek-v4-flash-thinking', messages: [{role: 'user', content: 'test'}], stream: true })
     });
     
     const res = await app.fetch(req);
@@ -186,7 +186,7 @@ test('session-parent-tracking: appends messages using response message_id as par
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'deepseek-flash-thinking',
+        model: 'deepseek-v4-flash-thinking',
         messages: [{ role: 'user', content: 'Turn 1' }]
       })
     });
@@ -201,7 +201,7 @@ test('session-parent-tracking: appends messages using response message_id as par
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'deepseek-flash-thinking',
+        model: 'deepseek-v4-flash-thinking',
         messages: [
           { role: 'user', content: 'Turn 1' },
           { role: 'assistant', content: 'Response 1' },
