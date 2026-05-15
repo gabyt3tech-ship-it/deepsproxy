@@ -158,25 +158,25 @@ GET /v1/models
   "object": "list",
   "data": [
     {
-      "id": "deepseek-flash",
+      "id": "deepseek-v4-flash",
       "object": "model",
       "created": 1715616000,
       "owned_by": "deepseek"
     },
     {
-      "id": "deepseek-flash-thinking",
+      "id": "deepseek-v4-flash-thinking",
       "object": "model",
       "created": 1715616000,
       "owned_by": "deepseek"
     },
     {
-      "id": "deepseek-pro",
+      "id": "deepseek-v4-pro",
       "object": "model",
       "created": 1715616000,
       "owned_by": "deepseek"
     },
     {
-      "id": "deepseek-pro-thinking",
+      "id": "deepseek-v4-pro-thinking",
       "object": "model",
       "created": 1715616000,
       "owned_by": "deepseek"
