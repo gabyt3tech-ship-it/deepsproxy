@@ -300,7 +300,37 @@ export async function chatCompletions(c: Context) {
       });
       const toolsJson = JSON.stringify(formattedTools, null, 2);
 
-      systemPrompt += `\n\n# TOOLS AVAILABLE\nYou have access to the following tools:\n${toolsJson}\n\nTo use a tool, you MUST output a JSON object wrapped EXACTLY in <tool_call> tags:\n\n<tool_call>{"name": "tool_name", "arguments": {"param_name": "value"}}</tool_call>\n\nRULES:\n1. You can call multiple tools by outputting multiple <tool_call> blocks consecutively.\n2. Do NOT output any other text after your tool_call blocks. Wait for the user to provide the tool response.\n3. The JSON must be valid and accurately follow the tool's parameters.\n4. When calling tools, ONLY output the <tool_call> blocks. No additional text or explanations.\n\n`;
+      const toolNames = formattedTools.map((t: any) => `"${t.name}"`).join(', ');
+
+      systemPrompt += `\n\n## Tools
+
+You have access to these tools. When a task requires using a tool, call it using the format below. If the task is simple (answer a question, give an explanation), respond directly.
+
+### Tool Definitions
+
+\`\`\`json
+${toolsJson}
+\`\`\`
+
+### How to call a tool
+
+Output EXACTLY this format (no extra text, no markdown code blocks):
+
+<tool_call>{"name": "tool_name", "arguments": {"param_name": "value"}}</tool_call>
+
+### When to call
+
+- Information gathering, file operations, analysis, code changes → call the right tool
+- Simple Q&A, explanations → respond directly
+- Multiple tools needed → call them one after another
+- If unsure, prefer using a tool
+
+### Rules
+
+1. Valid JSON with "name" and "arguments" only
+2. Arguments must match the tool's parameter schema
+3. After calling a tool, wait for the result
+4. NEVER wrap tool calls in markdown code blocks or add text around them\n\n`;
 
       const toolChoice = body.tool_choice;
       if (toolChoice && typeof toolChoice === 'object' && 'function' in toolChoice) {
